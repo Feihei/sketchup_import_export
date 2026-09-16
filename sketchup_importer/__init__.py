@@ -6,6 +6,7 @@ import time
 from collections import defaultdict
 
 import bpy
+import numpy as np
 from bpy.props import (
     BoolProperty,
     EnumProperty,
@@ -960,9 +961,25 @@ class SceneImporter:
         return cam.name
 
 
+def _rgba_to_int(rgba):
+    """Blender linear RGBA floats (0-1) → SketchUp 8-bit RGBA, with gamma correction."""
+    def to_byte(v):
+        return round(math.sqrt(max(0.0, min(1.0, v))) * 255.0)  # linear → sRGB
+
+    r, g, b = to_byte(rgba[0]), to_byte(rgba[1]), to_byte(rgba[2])
+    a = 255 if len(rgba) < 4 else round(max(0.0, min(1.0, rgba[3])) * 255.0)
+    return (r, g, b, a)
+
+
 class SceneExporter:
     def __init__(self):
         self.filepath = "/tmp/untitled.skp"
+        self.context = None
+        self.only_selected = False
+        self.export_materials = True
+        self.temp_files = []
+        self.material_map = {}
+        self.component_map = {}
 
     def set_filename(self, filename):
         self.filepath = filename
@@ -970,8 +987,166 @@ class SceneExporter:
         return self
 
     def save(self, context, **options):
-        skp_log(f"Finished exporting: {self.filepath}")
-        return {"FINISHED"}
+        self.context = context
+        self.only_selected = options.get("only_selected", False)
+        self.export_materials = options.get("export_materials", True)
+        skp_model = sketchup.Model()
+        saved = False
+        try:
+            self.export_objects(context, skp_model)
+            skp_model.save(self.filepath)
+            saved = True
+            skp_log(f"Finished exporting: {self.filepath}")
+            return {"FINISHED"}
+        except Exception as ex:
+            # 只清理本次导出实际写出的半成品文件, 不碰导出前已存在的文件
+            if saved and os.path.exists(self.filepath):
+                try:
+                    os.remove(self.filepath)
+                except OSError:
+                    pass
+            skp_log(f"Export failed: {ex}")
+            raise
+        finally:
+            try:
+                skp_model.close()
+            except RuntimeError:
+                pass
+            self.cleanup_temp_files()
+
+    def cleanup_temp_files(self):
+        for f in self.temp_files:
+            try:
+                os.remove(f)
+            except OSError:
+                pass
+        self.temp_files = []
+
+    def get_export_objects(self, context):
+        depsgraph = context.evaluated_depsgraph_get()
+        objects = context.selected_objects if self.only_selected else context.scene.objects
+        return [ob for ob in objects if ob.type == "MESH" and ob.visible_get()], depsgraph
+
+    def export_objects(self, context, skp_model):
+        objects, depsgraph = self.get_export_objects(context)
+        if not objects:
+            return
+
+        # 按 mesh data 分组: users>1 → ComponentDefinition + instances; users==1 → Group
+        shared = {}
+        for ob in objects:
+            if ob.data.users > 1 and not ob.data.name.startswith("."):
+                shared.setdefault(ob.data.name, []).append(ob)
+
+        model_entities = skp_model.entities
+        for ob in objects:
+            eval_ob = ob.evaluated_get(depsgraph)
+            mesh = eval_ob.to_mesh()
+            try:
+                mesh.calc_loop_triangles()
+                n_verts = len(mesh.vertices)
+                if n_verts == 0 or len(mesh.loop_triangles) == 0:
+                    continue
+                verts = np.empty(n_verts * 3, dtype=np.float64)
+                mesh.vertices.foreach_get("co", verts)
+                verts = verts.reshape(-1, 3)
+                loops = np.empty(len(mesh.loops), dtype=np.int32)
+                mesh.loops.foreach_get("vertex_index", loops)
+
+                material = self.export_material(ob, skp_model) if self.export_materials else None
+
+                use_component = ob.data.users > 1
+                if use_component:
+                    tris = [[int(loops[t.loops[0]]), int(loops[t.loops[1]]), int(loops[t.loops[2]])]
+                            for t in mesh.loop_triangles]
+                    comp = self.get_or_create_component(ob, verts, tris, material, skp_model)
+                    instance = comp.createInstance()
+                    instance.name = ob.name
+                    instance.transform = ob.matrix_world
+                    model_entities.addInstance(instance, ob.name)
+                else:
+                    group = sketchup.Group.create()
+                    group.name = ob.name
+                    group.transform = ob.matrix_world
+                    geom = sketchup.GeometryInput()
+                    geom.AddVertices(verts)
+                    for tri in mesh.loop_triangles:
+                        geom.add_face(
+                            [int(loops[tri.loops[0]]), int(loops[tri.loops[1]]), int(loops[tri.loops[2]])],
+                            material=material,
+                        )
+                    group.entities.addGeometryInput(geom)
+                    model_entities.addGroup(group)
+            finally:
+                eval_ob.to_mesh_clear()
+
+    def get_or_create_component(self, ob, verts, tris, material, skp_model):
+        """users>1 的 mesh: 首次遇到时建 definition(局部坐标), 之后直接复用。"""
+        key = ob.data.name
+        if key in self.component_map:
+            return self.component_map[key]
+
+        comp = sketchup.Component.create()
+        comp.name = key
+        geom = sketchup.GeometryInput()
+        geom.AddVertices(verts)
+        for tri in tris:
+            geom.add_face(tri, material=material)
+        comp.entities.addGeometryInput(geom)
+        skp_model.addComponentDefinitions([comp])
+        self.component_map[key] = comp
+        return comp
+
+    def export_material(self, ob, skp_model):
+        """导出 object 第一个材质槽的 diffuse 颜色(v1 简化)。"""
+        bmat = ob.material_slots[0].material if ob.material_slots else None
+        if not bmat:
+            return None
+        if bmat.name in self.material_map:
+            return self.material_map[bmat.name]
+
+        su_mat = sketchup.Material.create()
+        su_mat.name = bmat.name
+        su_mat.color = _rgba_to_int(list(bmat.diffuse_color))
+        if len(bmat.diffuse_color) >= 4 and bmat.diffuse_color[3] < 1.0:
+            su_mat.use_opacity = True
+            su_mat.opacity = float(bmat.diffuse_color[3])
+        self.export_texture(bmat, su_mat)
+        skp_model.addMaterials([su_mat])
+        self.material_map[bmat.name] = su_mat
+        return su_mat
+
+    def export_texture(self, bmat, su_mat):
+        """有 image texture 的材质: image 存临时 PNG 再 SUTextureCreateFromFile(v1 取第一个 image 节点)。"""
+        image = None
+        if bmat.use_nodes:
+            for node in bmat.node_tree.nodes:
+                if node.type == "TEX_IMAGE" and node.image:
+                    image = node.image
+                    break
+        if not image:
+            return
+        try:
+            png_path = os.path.join(
+                tempfile.gettempdir(), f"skp_export_{os.getpid()}_{len(self.temp_files)}_{image.name}.png")
+            _write_png(image, png_path)
+            texture = sketchup.Texture.create_from_file(png_path)
+            su_mat.set_texture(texture)
+            su_mat.type = 1  # SUMaterialType_Textured
+            self.temp_files.append(png_path)
+        except Exception as ex:
+            skp_log(f"Texture export failed for {bmat.name}: {ex}")
+
+
+def _write_png(image, filepath):
+    """Save a copy of a Blender image to filepath as PNG, without mutating the original datablock."""
+    copy = image.copy()
+    try:
+        copy.filepath_raw = filepath
+        copy.file_format = "PNG"
+        copy.save()
+    finally:
+        bpy.data.images.remove(copy)
 
 
 class ImportSKP(Operator, ImportHelper):
@@ -1075,9 +1250,35 @@ class ExportSKP(Operator, ExportHelper):
     bl_options = {"PRESET", "UNDO"}
     filename_ext = ".skp"
 
+    filter_glob: StringProperty(
+        default="*.skp",
+        options={"HIDDEN"},
+    )
+
+    only_selected: BoolProperty(
+        name="Selection Only",
+        description="Export only selected mesh objects instead of the whole scene",
+        default=False,
+    )
+
+    export_materials: BoolProperty(
+        name="Export Materials",
+        description="Export diffuse color / opacity of the first material slot",
+        default=True,
+    )
+
+    def draw(self, context):
+        layout = self.layout
+        layout.prop(self, "only_selected")
+        layout.prop(self, "export_materials")
+
     def execute(self, context):
-        keywords = self.as_keywords()
-        return SceneExporter().set_filename(keywords["filepath"]).save(context, **keywords)
+        keywords = self.as_keywords(ignore=("axis_forward", "axis_up", "filter_glob", "split_mode", "check_existing"))
+        try:
+            return SceneExporter().set_filename(keywords["filepath"]).save(context, **keywords)
+        except Exception as ex:
+            self.report({"ERROR"}, f"SKP export failed: {ex}")
+            return {"CANCELLED"}
 
 
 def menu_func_import(self, context):

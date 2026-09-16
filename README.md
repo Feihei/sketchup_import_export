@@ -30,6 +30,18 @@ Once installed and enabled, you can import Sketchup files (.skp) by:
 2) Navigate to and select your .skp file
 3) Adjust import settings if needed and click **Import Sketchup Scene**
 
+### Export (v1, new)
+You can also export the current scene to .skp via **File > Export > SketchUp (.skp)**:
+- Each mesh object becomes a single-level SketchUp group; the object's `matrix_world` is copied as the group transform (equivalent to "Clear Parent, Keep Transform")
+- Mesh data shared by several objects (`users > 1`) is exported as a ComponentDefinition with one instance per object
+- Vertex coordinates are converted from meters to SketchUp's internal inches
+- Materials: the first material slot's diffuse color/opacity is exported; image textures are saved to a temp PNG and attached
+
+Current limitations:
+- No nested hierarchy (flat single-level groups only)
+- Only the first material slot per object; UV mapping on faces is not written
+- Modifier results depend on depsgraph state (e.g. Cloth simulation frame)
+
 ## Compatibility
 The latest version of the importer is compatible with:
 - Blender 4.x

@@ -30,3 +30,5 @@ cdef extern from "SketchUpAPI/model/geometry_input.h":
     SU_RESULT SUGeometryInputFaceAddInnerLoop(SUGeometryInputRef geom_input, size_t face_index, SULoopInputRef* loop_input)
     SU_RESULT SUGeometryInputFaceSetFrontMaterial(SUGeometryInputRef geom_input, size_t face_index, const SUMaterialInput* material_input)
     SU_RESULT SUGeometryInputFaceSetBackMaterial(SUGeometryInputRef geom_input, size_t face_index, const SUMaterialInput* material_input)
+    SU_RESULT SUGeometryInputGetNumFaces(SUGeometryInputRef geom_input, size_t* count)
+    SU_RESULT SUGeometryInputGetNumVertices(SUGeometryInputRef geom_input, size_t* count)

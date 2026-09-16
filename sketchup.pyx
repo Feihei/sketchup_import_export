@@ -324,6 +324,14 @@ cdef class Texture:
     def __cinit__(self):
         self.tex_ref.ptr = <void*> 0
 
+    @staticmethod
+    def create_from_file(filename, double s_scale=1.0, double t_scale=1.0):
+        res = Texture()
+        py_byte_string = filename.encode('UTF-8')
+        cdef const char* file_path = py_byte_string
+        check_result(SUTextureCreateFromFile(&(res.tex_ref), file_path, s_scale, t_scale))
+        return res
+
     def write(self, filename):
         py_byte_string = filename.encode('UTF-8')
         cdef const char* file_path = py_byte_string
@@ -367,6 +375,24 @@ cdef class Instance:
             check_result(SUComponentInstanceGetName(self.instance, &n))
             return StringRef2Py(n)
 
+        def __set__(self, name):
+            py_byte_string = name.encode('UTF-8')
+            cdef const char* c_name = py_byte_string
+            check_result(SUComponentInstanceSetName(self.instance, c_name))
+
+    property transform:
+        def __get__(self):
+            cdef SUTransformation t
+            check_result(SUComponentInstanceGetTransform(self.instance, &t))
+            return [[t.values[0], t.values[4], t.values[8], m(t.values[12])],
+                    [t.values[1], t.values[5], t.values[9], m(t.values[13])],
+                    [t.values[2], t.values[6], t.values[10], m(t.values[14])],
+                    [t.values[3], t.values[7], t.values[11], t.values[15]]]  # * transform
+
+        def __set__(self, matrix):
+            cdef SUTransformation t = Matrix2SUTransformation(matrix)
+            check_result(SUComponentInstanceSetTransform(self.instance, &t))
+
     property entity:
         def __get__(self):
             cdef SUEntityRef ref
@@ -383,15 +409,6 @@ cdef class Instance:
             c = Component()
             c.comp_def.ptr = component.ptr
             return c
-
-    property transform:
-        def __get__(self):
-            cdef SUTransformation t
-            check_result(SUComponentInstanceGetTransform(self.instance, &t))
-            return [[t.values[0], t.values[4], t.values[8], m(t.values[12])],
-                    [t.values[1], t.values[5], t.values[9], m(t.values[13])],
-                    [t.values[2], t.values[6], t.values[10], m(t.values[14])],
-                    [t.values[3], t.values[7], t.values[11], t.values[15]]]  # * transform
 
     property material:
         def __get__(self):
@@ -442,6 +459,12 @@ cdef class Component:
     def __cinit__(self):
         self.comp_def.ptr = <void*> 0
 
+    @staticmethod
+    def create():
+        res = Component()
+        check_result(SUComponentDefinitionCreate(&(res.comp_def)))
+        return res
+
     property entities:
         def __get__(self):
             cdef SUEntitiesRef e
@@ -458,6 +481,16 @@ cdef class Component:
             SUStringCreate(&n)
             check_result(SUComponentDefinitionGetName(self.comp_def, &n))
             return StringRef2Py(n)
+
+        def __set__(self, name):
+            py_byte_string = name.encode('UTF-8')
+            cdef const char* c_name = py_byte_string
+            check_result(SUComponentDefinitionSetName(self.comp_def, c_name))
+
+    def createInstance(self):
+        res = Instance()
+        check_result(SUComponentDefinitionCreateInstance(self.comp_def, &(res.instance)))
+        return res
 
     property numInstances:
         def __get__(self):
@@ -505,6 +538,15 @@ cdef class Group:
     def __cinit__(self):
         pass
 
+    @staticmethod
+    def create():
+        res = Group()
+        check_result(SUGroupCreate(&(res.group)))
+        return res
+
+    cdef set_ptr(self, void* ptr):
+        self.group.ptr = ptr
+
     property name:
         def __get__(self):
             cdef SUStringRef n
@@ -512,6 +554,11 @@ cdef class Group:
             SUStringCreate(&n)
             check_result(SUGroupGetName(self.group, &n))
             return StringRef2Py(n)
+
+        def __set__(self, name):
+            py_byte_string = name.encode('UTF-8')
+            cdef const char* c_name = py_byte_string
+            check_result(SUGroupSetName(self.group, c_name))
 
     property transform:
         def __get__(self):
@@ -521,6 +568,10 @@ cdef class Group:
                     [t.values[1], t.values[5], t.values[9], m(t.values[13])],
                     [t.values[2], t.values[6], t.values[10], m(t.values[14])],
                     [t.values[3], t.values[7], t.values[11], t.values[15]]]  # * transform
+
+        def __set__(self, matrix):
+            cdef SUTransformation t = Matrix2SUTransformation(matrix)
+            check_result(SUGroupSetTransform(self.group, &t))
 
     property entities:
         def __get__(self):
@@ -823,6 +874,25 @@ cdef class Entities:
     def addFace(self, Face face):
         check_result(SUEntitiesAddFaces(self.entities, 1, &face.face_ref))
 
+    def addGeometryInput(self, GeometryInput geom_input, bool weld_vertices=False):
+        check_result(SUEntitiesFill(self.entities, geom_input.geom_input, weld_vertices))
+
+    def addGroup(self, Group group):
+        check_result(SUEntitiesAddGroup(self.entities, group.group))
+
+    def addInstance(self, Instance instance, name=""):
+        cdef SUStringRef out_name
+        out_name.ptr = <void*> 0
+        cdef SUStringRef* name_ptr = &out_name
+        if not name:
+            name_ptr = NULL
+        else:
+            check_result(SUStringCreate(&out_name))
+            check_result(SUStringSetUTF8(out_name, name.encode('UTF-8')))
+        check_result(SUEntitiesAddInstance(self.entities, instance.instance, name_ptr))
+        if name_ptr != NULL:
+            SUStringRelease(&out_name)
+
     def __repr__(self):
         return "<sketchup.Entities at {}> groups {} instances {}".format(hex(<size_t> &self.entities),
                                                                          self.NumGroups(), self.NumInstances())
@@ -833,6 +903,12 @@ cdef class Material:
     def __cinit__(self):
         self.material.ptr = <void*> 0
 
+    @staticmethod
+    def create():
+        res = Material()
+        check_result(SUMaterialCreate(&(res.material)))
+        return res
+
     property name:
         def __get__(self):
             cdef SUStringRef n
@@ -841,11 +917,39 @@ cdef class Material:
             check_result(SUMaterialGetName(self.material, &n))
             return StringRef2Py(n)
 
+        def __set__(self, name):
+            py_byte_string = name.encode('UTF-8')
+            cdef const char* c_name = py_byte_string
+            check_result(SUMaterialSetName(self.material, c_name))
+
     property color:
         def __get__(self):
             cdef SUColor c
             check_result(SUMaterialGetColor(self.material, &c))
             return (c.red, c.green, c.blue, c.alpha)
+
+        def __set__(self, rgba):
+            cdef SUColor c
+            c.red = int(rgba[0])
+            c.green = int(rgba[1])
+            c.blue = int(rgba[2])
+            c.alpha = int(rgba[3]) if len(rgba) > 3 else 255
+            check_result(SUMaterialSetColor(self.material, &c))
+
+    property colorize_type:
+        def __set__(self, int ctype):
+            check_result(SUMaterialSetColorizeType(self.material, <SUMaterialColorizeType> ctype))
+
+    property type:
+        def __set__(self, int mtype):
+            check_result(SUMaterialSetType(self.material, <SUMaterialType> mtype))
+
+    property use_opacity:
+        def __set__(self, bool use):
+            check_result(SUMaterialSetUseOpacity(self.material, use))
+
+    def set_texture(self, Texture texture):
+        check_result(SUMaterialSetTexture(self.material, texture.tex_ref))
 
     property opacity:
         def __get__(self):
@@ -1071,3 +1175,122 @@ cdef class Model:
                 l.layer.ptr = layers_array[i].ptr
                 yield l
             free(layers_array)
+
+    def addMaterials(self, list materials):
+        cdef size_t n = len(materials)
+        if n == 0:
+            return
+        cdef SUMaterialRef* mats = <SUMaterialRef*> malloc(sizeof(SUMaterialRef) * n)
+        if mats == NULL:
+            raise MemoryError("addMaterials: allocation failed")
+        try:
+            for i, mat in enumerate(materials):
+                mats[i] = (<Material> mat).material
+            check_result(SUModelAddMaterials(self.model, n, mats))
+        finally:
+            free(mats)
+
+    def addComponentDefinitions(self, list components):
+        cdef size_t n = len(components)
+        if n == 0:
+            return
+        cdef SUComponentDefinitionRef* defs = <SUComponentDefinitionRef*> malloc(sizeof(SUComponentDefinitionRef) * n)
+        if defs == NULL:
+            raise MemoryError("addComponentDefinitions: allocation failed")
+        try:
+            for i, comp in enumerate(components):
+                defs[i] = (<Component> comp).comp_def
+            check_result(SUModelAddComponentDefinitions(self.model, n, defs))
+        finally:
+            free(defs)
+
+
+cdef class GeometryInput:
+    cdef SUGeometryInputRef geom_input
+
+    def __cinit__(self):
+        self.geom_input.ptr = <void*> 0
+        check_result(SUGeometryInputCreate(&(self.geom_input)))
+
+    def __dealloc__(self):
+        if self.geom_input.ptr != <void*> 0:
+            SUGeometryInputRelease(&(self.geom_input))
+
+    property num_vertices:
+        def __get__(self):
+            cdef size_t count = 0
+            check_result(SUGeometryInputGetNumVertices(self.geom_input, &count))
+            return count
+
+    property num_faces:
+        def __get__(self):
+            cdef size_t count = 0
+            check_result(SUGeometryInputGetNumFaces(self.geom_input, &count))
+            return count
+
+    def AddVertices(self, const double[:, ::1] vertices):
+        """Add vertices in meters; converted to inches (SketchUp internal unit)."""
+        cdef size_t n = vertices.shape[0]
+        if n == 0:
+            return
+        cdef SUPoint3D* points = <SUPoint3D*> malloc(sizeof(SUPoint3D) * n)
+        if points == NULL:
+            raise MemoryError("AddVertices: allocation failed")
+        cdef size_t i
+        try:
+            for i in range(n):
+                points[i].x = vertices[i, 0] / 0.0254
+                points[i].y = vertices[i, 1] / 0.0254
+                points[i].z = vertices[i, 2] / 0.0254
+            check_result(SUGeometryInputSetVertices(self.geom_input, n, points))
+        finally:
+            free(points)
+
+    def add_face(self, list vertex_indices, material=None, list uvs=None):
+        """Add a face from vertex indices (into the vertices added by AddVertices).
+
+        material: Material object or None. uvs: list of up to 4 (s, t) pairs when material is given.
+        Returns the added face index.
+        """
+        cdef size_t face_index = 0
+        cdef size_t n = len(vertex_indices)
+        cdef SULoopInputRef loop
+        cdef SUMaterialInput mat_input
+        loop.ptr = <void*> 0
+        if uvs is not None and len(uvs) > 4:
+            raise ValueError("add_face supports at most 4 uv pairs")
+        check_result(SULoopInputCreate(&loop))
+        try:
+            for i in range(n):
+                check_result(SULoopInputAddVertexIndex(loop, vertex_indices[i]))
+            check_result(SUGeometryInputAddFace(self.geom_input, &loop, &face_index))
+            if material is not None:
+                mat_input.material = (<Material> material).material
+                mat_input.num_uv_coords = 0
+                if uvs is not None:
+                    mat_input.num_uv_coords = len(uvs)
+                    for i in range(len(uvs)):
+                        mat_input.uv_coords[i].x = uvs[i][0]
+                        mat_input.uv_coords[i].y = uvs[i][1]
+                        mat_input.vertex_indices[i] = vertex_indices[i]
+                check_result(SUGeometryInputFaceSetFrontMaterial(self.geom_input, face_index, &mat_input))
+        finally:
+            SULoopInputRelease(&loop)
+        return face_index
+
+
+cdef SUTransformation Matrix2SUTransformation(matrix):
+    """Copy a 4x4 Blender-style row-major matrix into a column-major SUTransformation.
+
+    Translation components are converted from meters to inches (SketchUp internal unit),
+    matching the m() conversion used by the getters.
+    """
+    cdef SUTransformation t
+    cdef int row, col
+    for row in range(4):
+        for col in range(4):
+            t.values[col * 4 + row] = matrix[row][col]
+    t.values[12] = t.values[12] / 0.0254
+    t.values[13] = t.values[13] / 0.0254
+    t.values[14] = t.values[14] / 0.0254
+    return t
