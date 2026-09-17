@@ -47,7 +47,7 @@ from .SKPutil import *
 bl_info = {
     "name": "SketchUp Importer",
     "author": "Martijn Berger, Sanjay Mehta, Arindam Mondal, Peter Kirkham",
-    "version": (0, 27, 0),
+    "version": (0, 28, 0),
     "blender": (3, 2, 0),
     "description": "Import of native SketchUp (.skp) files",
     "wiki_url": "https://github.com/martijnberger/pyslapi",
@@ -432,7 +432,9 @@ class SceneImporter:
                 self.materials_scales[name] = mat.texture.dimensions[2:]
             else:
                 self.materials_scales[name] = (1.0, 1.0)
-            if self.reuse_material and name not in bpy.data.materials:
+            if self.reuse_material and name in bpy.data.materials:
+                self.materials[name] = bpy.data.materials[name]
+            else:
                 bmat = bpy.data.materials.new(name)
                 r, g, b, a = mat.color
                 tex = mat.texture
@@ -491,8 +493,6 @@ class SceneImporter:
                 #    slot = bmat.texture_slots.add()
                 #    slot.texture = btex
                 self.materials[name] = bmat
-            else:
-                self.materials[name] = bpy.data.materials[name]
             if not MIN_LOGS:
                 print(f"     {name}")
 
@@ -1068,6 +1068,9 @@ class SceneExporter:
                     group = sketchup.Group.create()
                     group.name = ob.name
                     group.transform = ob.matrix_world
+                    # 必须先把 group 附加到模型, 再向其 entities 填充带材质的几何;
+                    # 反序会导致材质引用悬空 (SU_ERROR_SERIALIZATION / 崩溃)
+                    model_entities.addGroup(group)
                     geom = sketchup.GeometryInput()
                     geom.AddVertices(verts)
                     for tri in mesh.loop_triangles:
@@ -1076,7 +1079,6 @@ class SceneExporter:
                             material=material,
                         )
                     group.entities.addGeometryInput(geom)
-                    model_entities.addGroup(group)
             finally:
                 eval_ob.to_mesh_clear()
 
@@ -1088,12 +1090,13 @@ class SceneExporter:
 
         comp = sketchup.Component.create()
         comp.name = key
+        # definition 先附加到模型, 再填带材质的几何 (同 group 的顺序要求)
+        skp_model.addComponentDefinitions([comp])
         geom = sketchup.GeometryInput()
         geom.AddVertices(verts)
         for tri in tris:
             geom.add_face(tri, material=material)
         comp.entities.addGeometryInput(geom)
-        skp_model.addComponentDefinitions([comp])
         self.component_map[key] = comp
         return comp
 

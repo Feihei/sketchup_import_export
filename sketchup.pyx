@@ -1218,15 +1218,15 @@ cdef class GeometryInput:
 
     property num_vertices:
         def __get__(self):
-            cdef size_t count = 0
-            check_result(SUGeometryInputGetNumVertices(self.geom_input, &count))
-            return count
+            cdef size_t v = 0, f = 0, e = 0, c = 0, a = 0
+            check_result(SUGeometryInputGetCounts(self.geom_input, &v, &f, &e, &c, &a))
+            return v
 
     property num_faces:
         def __get__(self):
-            cdef size_t count = 0
-            check_result(SUGeometryInputGetNumFaces(self.geom_input, &count))
-            return count
+            cdef size_t v = 0, f = 0, e = 0, c = 0, a = 0
+            check_result(SUGeometryInputGetCounts(self.geom_input, &v, &f, &e, &c, &a))
+            return f
 
     def AddVertices(self, const double[:, ::1] vertices):
         """Add vertices in meters; converted to inches (SketchUp internal unit)."""
