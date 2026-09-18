@@ -21,7 +21,6 @@ samples/
 
 *.egg-info
 
-target/
 # SketchUp SDK binaries (not in repo, see AGENTS.md)
 binaries/
 # SketchUp SDK headers (not in repo, download from extensions.sketchup.com)
