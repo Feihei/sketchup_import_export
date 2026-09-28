@@ -1,14 +1,14 @@
 # Test: does merge_coplanar_tris rebuild complex coplanar polygons (not just quads)?
-# Extracts _boundary_loop / merge_coplanar_tris from blender plugin __init__.py
+# Extracts _boundary_rings / merge_coplanar_tris from blender plugin __init__.py
 # without importing bpy. Reports resulting face sizes per shape.
 import math
 from collections import defaultdict
 
 import numpy as np
 
-SRC = r"E:\play\coding\Sketchup_Importer\sketchup_importer\__init__.py"
+SRC = r"E:\play\coding\Sketchup_Importer\sketchup_import_export\__init__.py"
 text = open(SRC, encoding="utf-8").read()
-code = text[text.index("def _boundary_loop"): text.index("class SceneExporter")]
+code = text[text.index("def _boundary_rings"): text.index("class SceneExporter")]
 ns = {"defaultdict": defaultdict, "np": np}
 exec(code, ns)
 merge_coplanar_tris = ns["merge_coplanar_tris"]

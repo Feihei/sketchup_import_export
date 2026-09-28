@@ -21,7 +21,7 @@ classifiers = [
 "Bug Tracker" = "https://github.com/martijnberger/pyslapi/issues"
 
 [tool.setuptools]
-packages = ["sketchup_importer", "slapi"]
+packages = ["sketchup_import_export", "slapi"]
 
 # Note: We still need setup.py for proper Cython extension configuration
 # See setup.py for the extension module definitions 

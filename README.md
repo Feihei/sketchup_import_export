@@ -1,19 +1,33 @@
-# pyslapi
-Python bindings for the official Sketchup API and an importer for blender based on them
+# blender-sketchup
+Python bindings for the official SketchUp API, plus a Blender add-on for importing and exporting native .skp files
 
 
 ## Installing the Addon in Blender
 
-### Method 1: Direct Installation (Recommended)
+### Blender 4.2+ (Extension format, Recommended)
+1) Download the latest release zip from the releases page
+2) Start Blender
+3) From the top menu, choose: **Edit > Preferences... > Get Extensions**
+4) Click the dropdown arrow (top-right) and choose **Install from Disk...**
+   (or simply drag & drop the zip into the Blender window)
+5) Browse to and select the downloaded zip file (e.g., `sketchup_import_export_X.XX.zip`)
+6) Enable the extension by clicking the checkbox next to **SketchUp Import-Export**
+
+Or from the command line:
+```
+blender --command extension install sketchup_import_export_X.XX.zip
+```
+
+### Method 2: Direct Installation (Blender 4.1 and older)
 1) Download the latest release from [the releases page](https://github.com/martijnberger/pyslapi/releases)
 2) Start Blender
 3) From the top menu, choose: **Edit > Preferences...**
 4) Click on the **Add-ons** tab
 5) Click on the **Install...** button
-6) Browse to and select the downloaded zip file (e.g., `sketchup_importer_X.XX.zip`)
+6) Browse to and select the downloaded zip file (e.g., `sketchup_import_export_X.XX.zip`)
 7) Click **Install Add-on**
 8) In the add-ons list, search for "Sketchup"
-9) Enable the add-on by clicking the checkbox next to **Import-Export: Sketchup importer**
+9) Enable the add-on by clicking the checkbox next to **Import-Export: SketchUp Import-Export**
 10) Click **Save Preferences** to keep the add-on enabled for future Blender sessions
 
 ### Method 2: Manual Installation
@@ -43,9 +57,10 @@ Current limitations:
 - Modifier results depend on depsgraph state (e.g. Cloth simulation frame)
 
 ## Compatibility
-The latest version of the importer is compatible with:
-- Blender 4.x
-- Python 3.11
+The latest version of the add-on is compatible with:
+- Blender 4.2+ (installed as an extension with `blender_manifest.toml`; legacy `bl_info` install also works)
+- Windows / macOS (no Linux — the SketchUp SDK doesn't ship Linux libraries)
+- The bundled binary must match your Blender's bundled Python version (e.g. `cp313` builds for Blender 5.x)
 - Various versions of SketchUp files up to and including version 2025.1
 
 For older versions of Blender, check the specific release notes on the [releases page](https://github.com/martijnberger/pyslapi/releases).

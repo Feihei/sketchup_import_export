@@ -16,7 +16,7 @@ import sketchup  # compiled cp313 binding, needs SketchUpAPI.dll on PATH
 from sketchup import GeometryInput, Model
 
 # import merge code from the plugin without bpy
-text = open(os.path.join(REPO, "sketchup_importer", "__init__.py"), encoding="utf-8").read()
+text = open(os.path.join(REPO, "sketchup_import_export", "__init__.py"), encoding="utf-8").read()
 code = text[text.index("def _boundary_rings"): text.index("class SceneExporter")]
 ns = {"defaultdict": defaultdict, "np": np}
 exec(code, ns)

@@ -31,7 +31,7 @@
 5. Component 写方向：`SUComponentDefinitionCreate` / `SetEntities` / `SUComponentInstancesAdd` / `SUComponentInstanceSetTransform`
 6. 冒烟测试（Blender 外）：创建立方体 → save → `from_file` 读回断言 face 数
 
-## Phase 2：SceneExporter（sketchup_importer/__init__.py）
+## Phase 2：SceneExporter（sketchup_import_export/__init__.py）
 
 7. 几何收集：`evaluated_get(depsgraph)` 取 modifier 后网格 → `foreach_get` 顶点 → numpy → `@ matrix_world`（仅 `users==1` 路径需要世界坐标时）→ GeometryInput
 8. object → SU group（transform = matrix_world 拷贝）；`users>1` mesh → ComponentDefinition（局部坐标）+ 每 object 一个 ComponentInstance

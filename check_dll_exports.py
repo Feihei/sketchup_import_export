@@ -3,7 +3,7 @@ import re
 import subprocess
 
 DUMPBIN = r"C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\VC\Tools\MSVC\14.51.36231\bin\Hostx64\x64\dumpbin.exe"
-DLL = r"C:\Users\THAD\AppData\Roaming\Blender Foundation\Blender\5.2\scripts\addons\sketchup_importer\SketchUpAPI.dll"
+DLL = r"C:\Users\THAD\AppData\Roaming\Blender Foundation\Blender\5.2\scripts\addons\sketchup_import_export\SketchUpAPI.dll"
 
 out = subprocess.run([DUMPBIN, "/EXPORTS", DLL], capture_output=True, text=True)
 exported = set()

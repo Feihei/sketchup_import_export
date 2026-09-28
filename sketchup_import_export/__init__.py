@@ -46,16 +46,16 @@ from . import sketchup
 from .SKPutil import *
 
 bl_info = {
-    "name": "SketchUp Importer",
+    "name": "SketchUp Import-Export",
     "author": "Martijn Berger, Sanjay Mehta, Arindam Mondal, Peter Kirkham",
     "version": (0, 28, 0),
-    "blender": (3, 2, 0),
-    "description": "Import of native SketchUp (.skp) files",
+    "blender": (4, 2, 0),
+    "description": "Import and export native SketchUp (.skp) files",
     "wiki_url": "https://github.com/martijnberger/pyslapi",
     "doc_url": "https://github.com/arindam-m/pyslapi/wiki",
     "tracker_url": "https://github.com/arindam-m/pyslapi/wiki/Bug-Report",
     "category": "Import-Export",
-    "location": "File > Import",
+    "location": "File > Import / File > Export",
 }
 
 DEBUG = False

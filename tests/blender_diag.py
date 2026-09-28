@@ -8,7 +8,7 @@ from collections import defaultdict
 sys.path.insert(0, r"E:\play\coding\Sketchup_Importer\tests")
 import numpy as np
 
-text = open(r"E:\play\coding\Sketchup_Importer\sketchup_importer\__init__.py", encoding="utf-8").read()
+text = open(r"E:\play\coding\Sketchup_Importer\sketchup_import_export\__init__.py", encoding="utf-8").read()
 code = text[text.index("def _boundary_rings"): text.index("class SceneExporter")]
 ns = {"defaultdict": defaultdict, "np": np}
 exec(code, ns)

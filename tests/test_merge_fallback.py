@@ -3,7 +3,7 @@
 # Faces with holes are returned as (outer_ring, [hole_rings...]) tuples.
 import numpy as np
 
-SRC = r"E:\play\coding\Sketchup_Importer\sketchup_importer\__init__.py"
+SRC = r"E:\play\coding\Sketchup_Importer\sketchup_import_export\__init__.py"
 text = open(SRC, encoding="utf-8").read()
 code = text[text.index("def _boundary_rings"): text.index("class SceneExporter")]
 ns = {"defaultdict": __import__("collections").defaultdict, "np": np}

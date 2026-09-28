@@ -1,0 +1,29 @@
+schema_version = "1.0.0"
+
+# Extension identifier, used by Blender as the package id
+id = "sketchup_import_export"
+version = "0.28.0"
+name = "SketchUp Import-Export"
+tagline = "Import and export native SketchUp (.skp) files"
+maintainer = "Feihei"
+type = "add-on"
+
+website = "https://github.com/martijnberger/pyslapi"
+
+tags = ["Import-Export"]
+
+blender_version_min = "4.2.0"
+
+license = [
+  "SPDX:GPL-3.0-or-later",
+]
+
+# Bundled binaries (sketchup.*.pyd + SketchUpAPI DLLs) are Windows-only;
+# add "macos-arm64" / "macos-x64" when shipping macOS builds
+platforms = ["windows-x64"]
+
+[build]
+paths_exclude_pattern = [
+  "__pycache__/*",
+  "*.pyc",
+]

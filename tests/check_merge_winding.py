@@ -5,7 +5,7 @@ from collections import defaultdict
 
 import numpy as np
 
-SRC = r"E:\play\coding\Sketchup_Importer\sketchup_importer\__init__.py"
+SRC = r"E:\play\coding\Sketchup_Importer\sketchup_import_export\__init__.py"
 text = open(SRC, encoding="utf-8").read()
 start = text.index("def _boundary_rings")
 end = text.index("class SceneExporter")

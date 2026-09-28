@@ -9,8 +9,8 @@ import bpy
 argv = sys.argv[sys.argv.index("--") + 1:]
 out = argv[0]
 
-bpy.ops.preferences.addon_enable(module="sketchup_importer")
-from sketchup_importer.__init__ import SceneExporter
+bpy.ops.preferences.addon_enable(module="sketchup_import_export")
+from sketchup_import_export.__init__ import SceneExporter
 
 depsgraph = bpy.context.evaluated_depsgraph_get()
 total_tris = 0

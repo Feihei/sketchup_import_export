@@ -2,18 +2,18 @@
 
 ## 项目概述
 
-这是 **pyslapi**：官方 SketchUp SDK 的 Python 绑定，以及基于它的 **Blender SketchUp 导入插件**（.skp → Blender 场景）。当前 Blender 插件版本为 0.27.0（见 `sketchup_importer/__init__.py` 的 `bl_info`），Python 包版本 0.24.0（`pyproject.toml`）。
+这是 **pyslapi**：官方 SketchUp SDK 的 Python 绑定，以及基于它的 **Blender SketchUp Import-Export 插件**（.skp ↔ Blender 场景，双向）。当前 Blender 插件版本为 0.28.0（见 `sketchup_import_export/__init__.py` 的 `bl_info` 与 `blender_manifest.toml`），Python 包版本 0.24.0（`pyproject.toml`）。
 
-- 兼容：Blender 4.x、Python 3.11、SketchUp 文件至 2025.1
+- 兼容：Blender 4.2+（扩展格式，manifest 校验通过）、SketchUp 文件至 2025.1；编译产物 pyd 需匹配 Blender 自带 Python（cp313 对应 Blender 5.x；4.5 是 Python 3.11，不兼容现有 pyd）
 - 平台：Windows / macOS（**不支持 Linux** — SketchUp SDK 不提供 Linux 库）
-- 许可：Blender 插件部分为 GPL（见 `sketchup_importer/__init__.py` 头部）
+- 许可：Blender 插件部分为 GPL（见 `sketchup_import_export/__init__.py` 头部）
 
 ## 目录结构
 
 | 路径 | 说明 |
 |---|---|
 | `sketchup.pyx` | Cython 源码：官方 SketchUp C API 的 Python 绑定（核心扩展模块 `sketchup`） |
-| `sketchup_importer/` | Blender 插件包。`__init__.py`（~1100 行）含 `bl_info`、Operator、Import/Export 逻辑；`SKPutil/` 为工具函数 |
+| `sketchup_import_export/` | Blender 插件包。`__init__.py`（~1100 行）含 `bl_info`、Operator、Import/Export 逻辑；`blender_manifest.toml` 为 4.2+ 扩展清单；`SKPutil/` 为工具函数 |
 | `slapi/` | Python 层的 SketchUp API 封装：`model/*.pxd` 按 SketchUp 实体类型（face、edge、component 等）划分声明 |
 | `setup.py` | Cython 扩展构建脚本（按平台区分链接参数：Windows `/Zp8` + x64 lib，macOS framework） |
 | `pyproject.toml` | 包元数据 + **ruff 配置（line-length 120，select 见文件内注释）** |
@@ -41,6 +41,6 @@ macOS：按 README「Build Info」步骤，构建后需手动 `install_name_tool
 
 ## 常见任务入口
 
-- 改导入行为（几何、材质、变换）→ `sketchup_importer/__init__.py`
+- 改导入/导出行为（几何、材质、变换）→ `sketchup_import_export/__init__.py`
 - 改底层 API 绑定/新增 SU API 调用 → `sketchup.pyx`，声明放 `slapi/model/*.pxd`
 - 改构建/平台问题 → `setup.py` + `编译.md`
