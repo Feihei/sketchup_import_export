@@ -971,6 +971,100 @@ def _rgba_to_int(rgba):
     return (r, g, b, a)
 
 
+def _boundary_loop(halfedges):
+    """把共面块的有向边界半边 (a→b) 头尾相接串成一个闭合环; 不是恰好一个简单环时返回 []。
+
+    按半边前进方向 (a→b) 串接, 环的绕向与原三角一致, 法向不翻转。
+    """
+    nxt = {}
+    for a, b in halfedges:
+        if a == b or a in nxt:
+            return []
+        nxt[a] = b  # 从 a 出发的边界半边到达 b
+    loop = []
+    start = next(iter(nxt))
+    cur = start
+    while True:
+        loop.append(cur)
+        if cur not in nxt:
+            return []
+        cur = nxt.pop(cur)
+        if cur == start:
+            break
+    return loop if len(nxt) == 0 and len(loop) >= 3 else []
+
+
+def merge_coplanar_tris(verts, tris, normal_eps=1e-6, dist_eps=1e-6):
+    """把三角形网格按共面且共边连通合并为 N 边面。
+
+    verts: (n,3) float64; tris: (m,3) 顶点索引。
+    返回 [(面顶点索引列表)]; 出现孔洞/非流形等无法合并的块时整体回退为原始三角。
+    """
+    tris = np.asarray(tris, dtype=np.int64)
+    if len(tris) == 0:
+        return []
+    v0, v1, v2 = verts[tris[:, 0]], verts[tris[:, 1]], verts[tris[:, 2]]
+    n = np.cross(v1 - v0, v2 - v0)
+    area2 = np.linalg.norm(n, axis=1)
+    norms = n / np.maximum(area2, 1e-300)[:, None]
+    d = np.einsum("ij,ij->i", norms, v0)
+
+    # 无向边 → (三角, 有向半边); 两个三角相邻 = 共享一条无向边且半边方向相反
+    edge_map = defaultdict(list)
+    for ti, (a, b, c) in enumerate(tris):
+        for a, b in ((a, b), (b, c), (c, a)):
+            edge_map[(min(a, b), max(a, b))].append((ti, a, b))
+
+    adj = defaultdict(list)
+    for entries in edge_map.values():
+        if len(entries) != 2:
+            continue
+        (t1, a1, b1), (t2, a2, b2) = entries
+        if (a1, b1) != (b2, a2):
+            continue  # 同向重叠边: 非流形, 不合并
+        if abs(norms[t1] @ norms[t2] - 1.0) > normal_eps or abs(d[t1] - d[t2]) > dist_eps:
+            continue
+        adj[t1].append(t2)
+        adj[t2].append(t1)
+
+    faces = []  # 每个共面连通块的面顶点环; 复杂块记 None
+    visited = np.zeros(len(tris), dtype=bool)
+    for i in range(len(tris)):
+        if visited[i]:
+            continue
+        stack, comp = [i], []
+        visited[i] = True
+        while stack:
+            t = stack.pop()
+            comp.append(t)
+            for nb in adj[t]:
+                if not visited[nb]:
+                    visited[nb] = True
+                    stack.append(nb)
+        # 块内有向半边中, 无向边只出现一次的是边界; 出现两次以上为非流形
+        cnt = defaultdict(list)
+        for t in comp:
+            a, b, c = tris[t]
+            for a, b in ((int(a), int(b)), (int(b), int(c)), (int(c), int(a))):
+                cnt[(min(a, b), max(a, b))].append((a, b))
+        if any(len(e) > 2 for e in cnt.values()):
+            faces.append(None)
+            continue
+        boundary = [e[0] for e in cnt.values() if len(e) == 1]
+        # 边界必须是简单环: 每个边界顶点恰好出现在两条边界边中
+        bverts = [v for e in boundary for v in e]
+        if not boundary or len(bverts) != 2 * len(set(bverts)):
+            faces.append(None)  # 孔洞或开边界
+            continue
+        loop = _boundary_loop(boundary)
+        faces.append(loop if loop else None)
+
+    if any(f is None for f in faces):
+        # 有无法合并的块时整体回退为三角面, 保证输出始终是有效几何
+        return [[int(a), int(b), int(c)] for a, b, c in tris]
+    return faces
+
+
 class SceneExporter:
     def __init__(self):
         self.filepath = "/tmp/untitled.skp"
@@ -980,6 +1074,7 @@ class SceneExporter:
         self.temp_files = []
         self.material_map = {}
         self.component_map = {}
+        self.textured_mats = set()  # 带纹理的材质名 (Material.type 只写不可读)
 
     def set_filename(self, filename):
         self.filepath = filename
@@ -1053,13 +1148,26 @@ class SceneExporter:
                 loops = np.empty(len(mesh.loops), dtype=np.int32)
                 mesh.loops.foreach_get("vertex_index", loops)
 
-                material = self.export_material(ob, skp_model) if self.export_materials else None
+                # 按面材质槽分组: 同一 mesh 的不同面可属于不同材质槽
+                slot_mats = {}
+                for slot_idx, slot in enumerate(ob.material_slots):
+                    if slot.material:
+                        slot_mats[slot_idx] = self.export_material(slot.material, skp_model) if self.export_materials else None
+                tris_by_slot = defaultdict(list)
+                for t in mesh.loop_triangles:
+                    tri = [int(loops[t.loops[0]]), int(loops[t.loops[1]]), int(loops[t.loops[2]])]
+                    tris_by_slot[t.material_index].append(tri)
+                # (材质, 三角列表) 组; 无材质槽的面归到 None 材质
+                groups = [(slot_mats.get(idx), tris) for idx, tris in sorted(tris_by_slot.items())]
+                # 每组独立判断能否合并: 带纹理的材质需要逐顶点 UV, 合并成 N 边面会丢失纹理坐标
+                groups = [
+                    (mat, merge_coplanar_tris(verts, tris) if not (mat is not None and mat.name in self.textured_mats) else tris)
+                    for mat, tris in groups
+                ]
 
                 use_component = ob.data.users > 1
                 if use_component:
-                    tris = [[int(loops[t.loops[0]]), int(loops[t.loops[1]]), int(loops[t.loops[2]])]
-                            for t in mesh.loop_triangles]
-                    comp = self.get_or_create_component(ob, verts, tris, material, skp_model)
+                    comp = self.get_or_create_component(ob, verts, groups, skp_model)
                     instance = comp.createInstance()
                     instance.name = ob.name
                     instance.transform = ob.matrix_world
@@ -1073,17 +1181,18 @@ class SceneExporter:
                     model_entities.addGroup(group)
                     geom = sketchup.GeometryInput()
                     geom.AddVertices(verts)
-                    for tri in mesh.loop_triangles:
-                        geom.add_face(
-                            [int(loops[tri.loops[0]]), int(loops[tri.loops[1]]), int(loops[tri.loops[2]])],
-                            material=material,
-                        )
+                    for mat, faces in groups:
+                        for face in faces:
+                            geom.add_face(face, material=mat)
                     group.entities.addGeometryInput(geom)
             finally:
                 eval_ob.to_mesh_clear()
 
-    def get_or_create_component(self, ob, verts, tris, material, skp_model):
-        """users>1 的 mesh: 首次遇到时建 definition(局部坐标), 之后直接复用。"""
+    def get_or_create_component(self, ob, verts, groups, skp_model):
+        """users>1 的 mesh: 首次遇到时建 definition(局部坐标), 之后直接复用。
+
+        groups: [(材质, 面顶点索引列表), ...], 面可能是三角或合并后的 N 边面。
+        """
         key = ob.data.name
         if key in self.component_map:
             return self.component_map[key]
@@ -1094,15 +1203,15 @@ class SceneExporter:
         skp_model.addComponentDefinitions([comp])
         geom = sketchup.GeometryInput()
         geom.AddVertices(verts)
-        for tri in tris:
-            geom.add_face(tri, material=material)
+        for mat, faces in groups:
+            for face in faces:
+                geom.add_face(face, material=mat)
         comp.entities.addGeometryInput(geom)
         self.component_map[key] = comp
         return comp
 
-    def export_material(self, ob, skp_model):
-        """导出 object 第一个材质槽的 diffuse 颜色(v1 简化)。"""
-        bmat = ob.material_slots[0].material if ob.material_slots else None
+    def export_material(self, bmat, skp_model):
+        """导出材质 (v1: diffuse 颜色 + 可选纹理), 按材质名去重。"""
         if not bmat:
             return None
         if bmat.name in self.material_map:
@@ -1136,6 +1245,7 @@ class SceneExporter:
             texture = sketchup.Texture.create_from_file(png_path)
             su_mat.set_texture(texture)
             su_mat.type = 1  # SUMaterialType_Textured
+            self.textured_mats.add(bmat.name)
             self.temp_files.append(png_path)
         except Exception as ex:
             skp_log(f"Texture export failed for {bmat.name}: {ex}")
