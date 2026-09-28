@@ -1,4 +1,4 @@
-# blender-sketchup
+# sketchup_import_export
 Python bindings for the official SketchUp API, plus a Blender add-on for importing and exporting native .skp files
 
 
@@ -19,7 +19,7 @@ blender --command extension install sketchup_import_export_X.XX.zip
 ```
 
 ### Method 2: Direct Installation (Blender 4.1 and older)
-1) Download the latest release from [the releases page](https://github.com/martijnberger/pyslapi/releases)
+1) Download the latest release from [the releases page](https://github.com/Feihei/sketchup_import_export/releases)
 2) Start Blender
 3) From the top menu, choose: **Edit > Preferences...**
 4) Click on the **Add-ons** tab
@@ -30,7 +30,7 @@ blender --command extension install sketchup_import_export_X.XX.zip
 9) Enable the add-on by clicking the checkbox next to **Import-Export: SketchUp Import-Export**
 10) Click **Save Preferences** to keep the add-on enabled for future Blender sessions
 
-### Method 2: Manual Installation
+### Method 3: Manual Installation
 1) Download the latest release zip file
 2) Unpack the zip file into Blender's addons folder:
    - Windows: `%APPDATA%\Blender Foundation\Blender\[version]\scripts\addons`
@@ -63,7 +63,7 @@ The latest version of the add-on is compatible with:
 - The bundled binary must match your Blender's bundled Python version (e.g. `cp313` builds for Blender 5.x)
 - Various versions of SketchUp files up to and including version 2025.1
 
-For older versions of Blender, check the specific release notes on the [releases page](https://github.com/martijnberger/pyslapi/releases).
+For older versions of Blender, check the specific release notes on the [releases page](https://github.com/Feihei/sketchup_import_export/releases).
 
 ## Version 0.25 Improvements
 

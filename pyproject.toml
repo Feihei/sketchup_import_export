@@ -17,8 +17,8 @@ classifiers = [
 ]
 
 [project.urls]
-"Homepage" = "https://github.com/martijnberger/pyslapi"
-"Bug Tracker" = "https://github.com/martijnberger/pyslapi/issues"
+"Homepage" = "https://github.com/Feihei/sketchup_import_export"
+"Bug Tracker" = "https://github.com/Feihei/sketchup_import_export/issues"
 
 [tool.setuptools]
 packages = ["sketchup_import_export", "slapi"]

@@ -51,9 +51,9 @@ bl_info = {
     "version": (0, 28, 0),
     "blender": (4, 2, 0),
     "description": "Import and export native SketchUp (.skp) files",
-    "wiki_url": "https://github.com/martijnberger/pyslapi",
-    "doc_url": "https://github.com/arindam-m/pyslapi/wiki",
-    "tracker_url": "https://github.com/arindam-m/pyslapi/wiki/Bug-Report",
+    "wiki_url": "https://github.com/Feihei/sketchup_import_export",
+    "doc_url": "https://github.com/Feihei/sketchup_import_export",
+    "tracker_url": "https://github.com/Feihei/sketchup_import_export/issues",
     "category": "Import-Export",
     "location": "File > Import / File > Export",
 }

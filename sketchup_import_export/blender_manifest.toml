@@ -8,7 +8,7 @@ tagline = "Import and export native SketchUp (.skp) files"
 maintainer = "Feihei"
 type = "add-on"
 
-website = "https://github.com/martijnberger/pyslapi"
+website = "https://github.com/Feihei/sketchup_import_export"
 
 tags = ["Import-Export"]
 
