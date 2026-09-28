@@ -1,3 +1,4 @@
+import hashlib
 import math
 import os
 import shutil
@@ -1127,11 +1128,30 @@ class SceneExporter:
         if not objects:
             return
 
-        # 按 mesh data 分组: users>1 → ComponentDefinition + instances; users==1 → Group
-        shared = {}
+        # 按求值后几何 (modifier 应用后的顶点+三角数据) 分组:
+        # 只有几何完全一致的对象才共用 ComponentDefinition;
+        # 同 mesh data 但 modifier 参数不同 (如 array 数量/间距) 的求值结果不同, 各自导出为 Group
+        geo_sig = {}
+        ob_geo_key = {}
         for ob in objects:
-            if ob.data.users > 1 and not ob.data.name.startswith("."):
-                shared.setdefault(ob.data.name, []).append(ob)
+            eval_ob = ob.evaluated_get(depsgraph)
+            mesh = eval_ob.to_mesh()
+            try:
+                mesh.calc_loop_triangles()
+                if len(mesh.vertices) == 0 or len(mesh.loop_triangles) == 0:
+                    continue
+                co = np.empty(len(mesh.vertices) * 3, dtype=np.float64)
+                mesh.vertices.foreach_get("co", co)
+                vi = np.empty(len(mesh.loops), dtype=np.int32)
+                mesh.loops.foreach_get("vertex_index", vi)
+                h = hashlib.sha256()
+                h.update(co.tobytes())
+                h.update(vi.tobytes())
+                key = h.hexdigest()
+                ob_geo_key[ob.name] = key
+                geo_sig.setdefault(key, []).append(ob)
+            finally:
+                eval_ob.to_mesh_clear()
 
         model_entities = skp_model.entities
         for ob in objects:
@@ -1165,7 +1185,9 @@ class SceneExporter:
                     for mat, tris in groups
                 ]
 
-                use_component = ob.data.users > 1
+                # 求值后几何与其他对象一致的才走 component 共享; 否则 (含 users==1) 导出为 group
+                geo_key = ob_geo_key.get(ob.name)
+                use_component = len(geo_sig.get(geo_key, ())) > 1 if geo_key else False
                 if use_component:
                     comp = self.get_or_create_component(ob, verts, groups, skp_model)
                     instance = comp.createInstance()
