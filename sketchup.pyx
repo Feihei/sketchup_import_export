@@ -1246,15 +1246,18 @@ cdef class GeometryInput:
         finally:
             free(points)
 
-    def add_face(self, list vertex_indices, material=None, list uvs=None):
+    def add_face(self, list vertex_indices, material=None, list uvs=None, inner_loops=None, soft_edges=None):
         """Add a face from vertex indices (into the vertices added by AddVertices).
 
         material: Material object or None. uvs: list of up to 4 (s, t) pairs when material is given.
+        inner_loops: list of vertex-index lists forming holes in the face.
+        soft_edges: iterable of loop edge indices (edge i = vertex i -> i+1) to mark soft.
         Returns the added face index.
         """
         cdef size_t face_index = 0
         cdef size_t n = len(vertex_indices)
         cdef SULoopInputRef loop
+        cdef SULoopInputRef inner
         cdef SUMaterialInput mat_input
         loop.ptr = <void*> 0
         if uvs is not None and len(uvs) > 4:
@@ -1263,7 +1266,19 @@ cdef class GeometryInput:
         try:
             for i in range(n):
                 check_result(SULoopInputAddVertexIndex(loop, vertex_indices[i]))
+                if soft_edges is not None and i in soft_edges:
+                    check_result(SULoopInputEdgeSetSoft(loop, i, 1))
             check_result(SUGeometryInputAddFace(self.geom_input, &loop, &face_index))
+            if inner_loops is not None:
+                for hole in inner_loops:
+                    inner.ptr = <void*> 0
+                    check_result(SULoopInputCreate(&inner))
+                    try:
+                        for i in range(len(hole)):
+                            check_result(SULoopInputAddVertexIndex(inner, hole[i]))
+                        check_result(SUGeometryInputFaceAddInnerLoop(self.geom_input, face_index, &inner))
+                    finally:
+                        SULoopInputRelease(&inner)
             if material is not None:
                 mat_input.material = (<Material> material).material
                 mat_input.num_uv_coords = 0

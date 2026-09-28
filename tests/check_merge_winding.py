@@ -7,7 +7,7 @@ import numpy as np
 
 SRC = r"E:\play\coding\Sketchup_Importer\sketchup_importer\__init__.py"
 text = open(SRC, encoding="utf-8").read()
-start = text.index("def _boundary_loop")
+start = text.index("def _boundary_rings")
 end = text.index("class SceneExporter")
 code = text[start:end]
 ns = {"defaultdict": defaultdict, "np": np}
@@ -19,6 +19,8 @@ def check(name, verts, tris, expect_ccw_normal):
     print(f"--- {name}: {len(faces)} face(s)")
     ok = True
     for f in faces:
+        if isinstance(f, tuple):
+            f = f[0]  # 带孔洞面只检查外环
         a, b, c = (np.asarray(verts, float)[i] for i in f[:3])
         n = np.cross(b - a, c - a)
         d = float(np.dot(n, expect_ccw_normal))
@@ -41,6 +43,8 @@ faces = merge_coplanar_tris(np.asarray(Vh, float), tris_h)
 print(f"--- ring-with-hole: {len(faces)} face(s)")
 ok3 = True
 for f in faces:
+    if isinstance(f, tuple):
+        f = f[0]
     if len(f) == 3 and list(f) in [list(t) for t in tris_h]:
         a, b, c = (np.asarray(Vh, float)[i] for i in f)
         n = np.cross(b - a, c - a)

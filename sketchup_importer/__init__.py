@@ -972,34 +972,39 @@ def _rgba_to_int(rgba):
     return (r, g, b, a)
 
 
-def _boundary_loop(halfedges):
-    """把共面块的有向边界半边 (a→b) 头尾相接串成一个闭合环; 不是恰好一个简单环时返回 []。
+def _boundary_rings(halfedges):
+    """把共面块的有向边界半边 (a→b) 串成闭合环, 返回全部环 (外环 + 孔洞环)。
 
     按半边前进方向 (a→b) 串接, 环的绕向与原三角一致, 法向不翻转。
+    有重复出发半边或断链等非流形情况时返回 []。
     """
     nxt = {}
     for a, b in halfedges:
         if a == b or a in nxt:
             return []
         nxt[a] = b  # 从 a 出发的边界半边到达 b
-    loop = []
-    start = next(iter(nxt))
-    cur = start
-    while True:
-        loop.append(cur)
-        if cur not in nxt:
-            return []
-        cur = nxt.pop(cur)
-        if cur == start:
-            break
-    return loop if len(nxt) == 0 and len(loop) >= 3 else []
+    rings = []
+    while nxt:
+        start = next(iter(nxt))
+        ring = []
+        cur = start
+        while True:
+            ring.append(cur)
+            if cur not in nxt:
+                return []
+            cur = nxt.pop(cur)
+            if cur == start:
+                break
+        rings.append(ring)
+    return rings
 
 
 def merge_coplanar_tris(verts, tris, normal_eps=1e-6, dist_eps=1e-6):
     """把三角形网格按共面且共边连通合并为 N 边面。
 
     verts: (n,3) float64; tris: (m,3) 顶点索引。
-    返回 [(面顶点索引列表)]; 出现孔洞/非流形等无法合并的块时整体回退为原始三角。
+    返回 [(面顶点索引列表)]; 带孔洞的块返回 (外环, [孔洞环, ...]) 元组。
+    无法合并的块 (非流形/捏点) 只回退该块自身的三角, 不影响其他块。
     """
     tris = np.asarray(tris, dtype=np.int64)
     if len(tris) == 0:
@@ -1028,7 +1033,7 @@ def merge_coplanar_tris(verts, tris, normal_eps=1e-6, dist_eps=1e-6):
         adj[t1].append(t2)
         adj[t2].append(t1)
 
-    faces = []  # 每个共面连通块的面顶点环; 复杂块记 None
+    faces = []  # 每个共面连通块: 面顶点环 / (外环, 孔洞环列表) / 回退三角
     visited = np.zeros(len(tris), dtype=bool)
     for i in range(len(tris)):
         if visited[i]:
@@ -1042,6 +1047,7 @@ def merge_coplanar_tris(verts, tris, normal_eps=1e-6, dist_eps=1e-6):
                 if not visited[nb]:
                     visited[nb] = True
                     stack.append(nb)
+        comp_tris = [[int(x) for x in tris[t]] for t in comp]
         # 块内有向半边中, 无向边只出现一次的是边界; 出现两次以上为非流形
         cnt = defaultdict(list)
         for t in comp:
@@ -1049,20 +1055,42 @@ def merge_coplanar_tris(verts, tris, normal_eps=1e-6, dist_eps=1e-6):
             for a, b in ((int(a), int(b)), (int(b), int(c)), (int(c), int(a))):
                 cnt[(min(a, b), max(a, b))].append((a, b))
         if any(len(e) > 2 for e in cnt.values()):
-            faces.append(None)
+            faces.extend(comp_tris)  # 非流形: 该块回退为三角
             continue
         boundary = [e[0] for e in cnt.values() if len(e) == 1]
-        # 边界必须是简单环: 每个边界顶点恰好出现在两条边界边中
+        # 每个边界顶点恰好出现在两条边界边中 (排除捏点)
         bverts = [v for e in boundary for v in e]
         if not boundary or len(bverts) != 2 * len(set(bverts)):
-            faces.append(None)  # 孔洞或开边界
+            faces.extend(comp_tris)  # 孔洞无法成环或捏点: 该块回退为三角
             continue
-        loop = _boundary_loop(boundary)
-        faces.append(loop if loop else None)
+        rings = _boundary_rings(boundary)
+        if not rings:
+            faces.extend(comp_tris)
+            continue
+        if len(rings) == 1:
+            faces.append(rings[0])
+            continue
+        # 多环 = 带孔洞面: 沿块法向投影, 外环有向面积为正, 孔洞环为负
+        nrm = norms[comp[0]]
+        ref = np.array([1.0, 0.0, 0.0]) if abs(nrm[0]) < 0.9 else np.array([0.0, 1.0, 0.0])
+        u = np.cross(nrm, ref)
+        u /= np.linalg.norm(u)
+        v = np.cross(nrm, u)
+        areas = []
+        for ring in rings:
+            pts = verts[ring]
+            xs, ys = pts @ u, pts @ v
+            a2 = 0.0
+            for k in range(len(ring)):
+                j = (k + 1) % len(ring)
+                a2 += xs[k] * ys[j] - xs[j] * ys[k]
+            areas.append(a2)
+        pos = [k for k, a in enumerate(areas) if a > 0]
+        if len(pos) != 1:
+            faces.extend(comp_tris)  # 无法唯一确定外环: 该块回退为三角
+            continue
+        faces.append((rings[pos[0]], [rings[k] for k in range(len(rings)) if k != pos[0]]))
 
-    if any(f is None for f in faces):
-        # 有无法合并的块时整体回退为三角面, 保证输出始终是有效几何
-        return [[int(a), int(b), int(c)] for a, b, c in tris]
     return faces
 
 
@@ -1076,6 +1104,7 @@ class SceneExporter:
         self.material_map = {}
         self.component_map = {}
         self.textured_mats = set()  # 带纹理的材质名 (Material.type 只写不可读)
+        self.soft_angle = 0.0  # 相邻面法向夹角阈值 (度), <=0 关闭柔化
 
     def set_filename(self, filename):
         self.filepath = filename
@@ -1086,6 +1115,7 @@ class SceneExporter:
         self.context = context
         self.only_selected = options.get("only_selected", False)
         self.export_materials = options.get("export_materials", True)
+        self.soft_angle = options.get("soft_angle", 0.0)
         skp_model = sketchup.Model()
         saved = False
         try:
@@ -1179,17 +1209,26 @@ class SceneExporter:
                     tris_by_slot[t.material_index].append(tri)
                 # (材质, 三角列表) 组; 无材质槽的面归到 None 材质
                 groups = [(slot_mats.get(idx), tris) for idx, tris in sorted(tris_by_slot.items())]
+                n_tris_in = sum(len(ts) for _, ts in groups)
                 # 每组独立判断能否合并: 带纹理的材质需要逐顶点 UV, 合并成 N 边面会丢失纹理坐标
                 groups = [
                     (mat, merge_coplanar_tris(verts, tris) if not (mat is not None and mat.name in self.textured_mats) else tris)
                     for mat, tris in groups
                 ]
+                n_faces_out = sum(len(fs) for _, fs in groups)
+                n_holes = sum(1 for _, fs in groups for f in fs if isinstance(f, tuple))
+                soft_flags = self._compute_soft_flags(groups, verts)
+                n_soft = sum(len(s) for s in soft_flags.values())
+                if n_faces_out < n_tris_in or n_holes:
+                    skp_log(f"{ob.name}: {n_tris_in} tris -> {n_faces_out} faces ({n_holes} with holes)")
+                if n_soft:
+                    skp_log(f"{ob.name}: {n_soft} soft edges (angle < {self.soft_angle:g} deg)")
 
                 # 求值后几何与其他对象一致的才走 component 共享; 否则 (含 users==1) 导出为 group
                 geo_key = ob_geo_key.get(ob.name)
                 use_component = len(geo_sig.get(geo_key, ())) > 1 if geo_key else False
                 if use_component:
-                    comp = self.get_or_create_component(ob, verts, groups, skp_model)
+                    comp = self.get_or_create_component(ob, verts, groups, skp_model, soft_flags)
                     instance = comp.createInstance()
                     instance.name = ob.name
                     instance.transform = ob.matrix_world
@@ -1203,14 +1242,68 @@ class SceneExporter:
                     model_entities.addGroup(group)
                     geom = sketchup.GeometryInput()
                     geom.AddVertices(verts)
-                    for mat, faces in groups:
-                        for face in faces:
-                            geom.add_face(face, material=mat)
+                    for gi, (mat, faces) in enumerate(groups):
+                        for fi, face in enumerate(faces):
+                            self._add_face(geom, face, mat, soft_flags.get((gi, fi)))
                     group.entities.addGeometryInput(geom)
             finally:
                 eval_ob.to_mesh_clear()
 
-    def get_or_create_component(self, ob, verts, groups, skp_model):
+    def _add_face(self, geom, face, mat, soft_edges=None):
+        """face: 顶点索引列表, 或 (外环, [孔洞环, ...]) 元组 (merge_coplanar_tris 产出)。
+
+        soft_edges: 需标记 soft 的外环边索引集合 (None = 不设置)。
+        """
+        if isinstance(face, tuple):
+            geom.add_face(face[0], material=mat, inner_loops=face[1], soft_edges=soft_edges)
+        else:
+            geom.add_face(face, material=mat, soft_edges=soft_edges)
+
+    @staticmethod
+    def _newell_normal(verts, loop):
+        """Newell 法求面法向 (对非凸环稳健)。"""
+        nx = ny = nz = 0.0
+        n = len(loop)
+        for k in range(n):
+            x0, y0, z0 = verts[loop[k]]
+            x1, y1, z1 = verts[loop[(k + 1) % n]]
+            nx += (y0 - y1) * (z0 + z1)
+            ny += (z0 - z1) * (x0 + x1)
+            nz += (x0 - x1) * (y0 + y1)
+        v = np.array([nx, ny, nz])
+        ln = np.linalg.norm(v)
+        return v / ln if ln > 1e-300 else v
+
+    def _compute_soft_flags(self, groups, verts):
+        """相邻面法向夹角 < soft_angle 的公共边标记为 soft (SketchUp 自动柔化语义)。
+
+        在合并后的最终面集合上求邻接, 对合并面/回退三角/跨材质组的边都适用。
+        返回 {(组序号, 面序号): {边索引, ...}}; 边索引 i 对应环上顶点 i -> i+1。
+        """
+        if self.soft_angle <= 0:
+            return {}
+        edge_faces = defaultdict(list)
+        for gi, (_, faces) in enumerate(groups):
+            for fi, face in enumerate(faces):
+                loop = face[0] if isinstance(face, tuple) else face
+                nrm = self._newell_normal(verts, loop)
+                for k in range(len(loop)):
+                    a, b = int(loop[k]), int(loop[(k + 1) % len(loop)])
+                    edge_faces[(min(a, b), max(a, b))].append((gi, fi, k, a, b, nrm))
+        soft = defaultdict(set)
+        for entries in edge_faces.values():
+            if len(entries) != 2:
+                continue  # 开边界或非流形边不处理
+            (gi1, fi1, k1, a1, b1, n1), (gi2, fi2, k2, a2, b2, n2) = entries
+            if (a1, b1) == (a2, b2):
+                continue  # 同向重叠边: 非流形
+            cosang = max(-1.0, min(1.0, float(n1 @ n2)))
+            if math.degrees(math.acos(cosang)) < self.soft_angle:
+                soft[(gi1, fi1)].add(k1)
+                soft[(gi2, fi2)].add(k2)
+        return soft
+
+    def get_or_create_component(self, ob, verts, groups, skp_model, soft_flags=None):
         """users>1 的 mesh: 首次遇到时建 definition(局部坐标), 之后直接复用。
 
         groups: [(材质, 面顶点索引列表), ...], 面可能是三角或合并后的 N 边面。
@@ -1225,9 +1318,9 @@ class SceneExporter:
         skp_model.addComponentDefinitions([comp])
         geom = sketchup.GeometryInput()
         geom.AddVertices(verts)
-        for mat, faces in groups:
-            for face in faces:
-                geom.add_face(face, material=mat)
+        for gi, (mat, faces) in enumerate(groups):
+            for fi, face in enumerate(faces):
+                self._add_face(geom, face, mat, soft_flags.get((gi, fi)) if soft_flags else None)
         comp.entities.addGeometryInput(geom)
         self.component_map[key] = comp
         return comp
@@ -1402,10 +1495,20 @@ class ExportSKP(Operator, ExportHelper):
         default=True,
     )
 
+    soft_angle: FloatProperty(
+        name="Soft Edge Angle (deg)",
+        description="Soften edges shared by adjacent faces whose normals differ less than this angle, "
+        "hiding leftover triangulation lines (0 = disabled, SketchUp default is 20)",
+        default=20.0,
+        min=0.0,
+        max=180.0,
+    )
+
     def draw(self, context):
         layout = self.layout
         layout.prop(self, "only_selected")
         layout.prop(self, "export_materials")
+        layout.prop(self, "soft_angle")
 
     def execute(self, context):
         keywords = self.as_keywords(ignore=("axis_forward", "axis_up", "filter_glob", "split_mode", "check_existing"))
