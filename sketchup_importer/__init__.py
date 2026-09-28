@@ -1115,7 +1115,8 @@ class SceneExporter:
         self.context = context
         self.only_selected = options.get("only_selected", False)
         self.export_materials = options.get("export_materials", True)
-        self.soft_angle = options.get("soft_angle", 0.0)
+        # 柔化总开关关闭时把阈值归零, 统一由 soft_angle <= 0 判定
+        self.soft_angle = options.get("soft_angle", 0.0) if options.get("soften_edges", True) else 0.0
         skp_model = sketchup.Model()
         saved = False
         try:
@@ -1495,6 +1496,13 @@ class ExportSKP(Operator, ExportHelper):
         default=True,
     )
 
+    soften_edges: BoolProperty(
+        name="Soften Edges",
+        description="Soften edges shared by adjacent faces whose normals differ less than the angle below, "
+        "hiding leftover triangulation lines (same as SketchUp's automatic soften/smooth)",
+        default=True,
+    )
+
     soft_angle: FloatProperty(
         name="Soft Edge Angle (deg)",
         description="Soften edges shared by adjacent faces whose normals differ less than this angle, "
@@ -1508,7 +1516,10 @@ class ExportSKP(Operator, ExportHelper):
         layout = self.layout
         layout.prop(self, "only_selected")
         layout.prop(self, "export_materials")
-        layout.prop(self, "soft_angle")
+        layout.prop(self, "soften_edges")
+        col = layout.column()
+        col.enabled = self.soften_edges
+        col.prop(self, "soft_angle")
 
     def execute(self, context):
         keywords = self.as_keywords(ignore=("axis_forward", "axis_up", "filter_glob", "split_mode", "check_existing"))
